@@ -4,61 +4,67 @@ import config from '../../config';
 import AppError from '../../errors/AppError';
 import { TStudent } from '../student/student.interface';
 import { Student } from '../student/student.model';
-import { AcademicSemester } from './../academicSemester/academicSemester.model';
+import { AcademicSemester } from '../academicSemester/academicSemester.model';
 import { TUser } from './user.interface';
 import { User } from './user.model';
 import { generateStudentId } from './user.utils';
 
-
 const createStudentIntoDB = async (password: string, payload: TStudent) => {
-  // create a user object
-  const userData: Partial<TUser> = {};
+  // Create a user object with partial fields
+  const userData: Partial<TUser> = {
+    password: password || (config.default_password as string), // Use default password if not provided
+    role: 'student', // Set role as 'student'
+  };
 
-  //if password is not given , use deafult password
-  userData.password = password || (config.default_password as string);
-
-  //set student role
-  userData.role = 'student';
-
-  // find academic semester info
+  // Find academic semester info
   const admissionSemester = await AcademicSemester.findById(
     payload.admissionSemester,
   );
+
+  // Throw an error if the semester is not found
+  if (!admissionSemester) {
+    throw new AppError(StatusCodes.NOT_FOUND, 'Admission semester not found');
+  }
 
   const session = await mongoose.startSession();
 
   try {
     session.startTransaction();
-    //set  generated id
+
+    // Generate a student ID based on the semester
     userData.id = await generateStudentId(admissionSemester);
 
-    // create a user (transaction-1)
-    const newUser = await User.create([userData], { session }); // array
+    // Create the user (transaction-1)
+    const [newUser] = await User.create([userData], { session });
 
-    //create a student
-    if (!newUser.length) {
+    if (!newUser) {
       throw new AppError(StatusCodes.BAD_REQUEST, 'Failed to create user');
     }
-    // set id , _id as user
-    payload.id = newUser[0].id;
-    payload.user = newUser[0]._id; //reference _id
 
-    // create a student (transaction-2)
+    // Assign user ID and reference to the payload
+    payload.id = newUser.id;
+    payload.user = newUser._id;
 
-    const newStudent = await Student.create([payload], { session });
+    // Create the student record (transaction-2)
+    const [newStudent] = await Student.create([payload], { session });
 
-    if (!newStudent.length) {
+    if (!newStudent) {
       throw new AppError(StatusCodes.BAD_REQUEST, 'Failed to create student');
     }
 
+    // Commit the transaction and end the session
     await session.commitTransaction();
     await session.endSession();
 
     return newStudent;
-  } catch (err) {
+  } catch (error) {
+    // Rollback the transaction in case of failure
     await session.abortTransaction();
     await session.endSession();
-    throw new Error('Failed to create student');
+    throw new AppError(
+      StatusCodes.INTERNAL_SERVER_ERROR,
+      'Failed to create student',
+    );
   }
 };
 
