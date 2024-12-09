@@ -1,26 +1,24 @@
-import { TErrorSource } from './../interface/error';
 import mongoose from 'mongoose';
+import { TErrorSources, TGenericErrorResponse } from '../interface/error';
 
-type TGenericErrorResponse = {
-  statusCoded: string;
-  massage: string;
-  errorSources: TErrorSource;
-}
-
-const handleValidationError = (err: mongoose.Error.ValidationError) => {
-  // Map over the errors to create a structured error source array
-  const errorSource: TErrorSource = Object.values(err.errors).map((val: mongoose.Error.ValidatorError | mongoose.Error.CastError) => ({
-    path: val?.path || 'unknown',
-    message: val?.message || 'Validation error',
-  }));
-
-  
+const handleValidationError = (
+  err: mongoose.Error.ValidationError,
+): TGenericErrorResponse => {
+  const errorSources: TErrorSources = Object.values(err.errors).map(
+    (val: mongoose.Error.ValidatorError | mongoose.Error.CastError) => {
+      return {
+        path: val?.path,
+        message: val?.message,
+      };
+    },
+  );
 
   const statusCode = 400;
+
   return {
     statusCode,
-    message: 'Validation error occurred',
-    errorSource, // Include the processed errors
+    message: 'Validation Error',
+    errorSources,
   };
 };
 
